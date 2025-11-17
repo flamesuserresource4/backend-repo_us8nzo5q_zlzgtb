@@ -1,6 +1,12 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+from bson import ObjectId
+
+from database import db, create_document
+from schemas import WaitlistLead
 
 app = FastAPI()
 
@@ -64,6 +70,20 @@ def test_database():
     
     return response
 
+# Waitlist endpoint
+@app.post("/api/waitlist")
+def join_waitlist(lead: WaitlistLead):
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    try:
+        # Prevent duplicates by email (case-insensitive)
+        existing = db["waitlistlead"].find_one({"email": {"$regex": f"^{lead.email}$", "$options": "i"}})
+        if existing:
+            return {"status": "exists", "message": "You are already on the list. We'll be in touch soon."}
+        inserted_id = create_document("waitlistlead", lead)
+        return {"status": "ok", "id": inserted_id, "message": "You're in. We'll notify you first."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
